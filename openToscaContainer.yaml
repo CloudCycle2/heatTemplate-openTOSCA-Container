@@ -1,0 +1,160 @@
+heat_template_version: 2015-04-30
+
+description: template that deploys an OpenTOSCA instance
+
+parameters:
+  key_name:
+    type: string
+    label: Key Name
+    description: Name of key-pair to be used for compute instance
+  flavor:
+    type: string
+    label: Instance Type
+    default: m1.small
+    description: Type of instance (flavor) to be used
+
+resources:
+  toscaContainer_secgroup:
+    type: OS::Neutron::SecurityGroup
+    properties:
+      rules:
+        - protocol: tcp
+          remote_ip_prefix: 0.0.0.0/0
+          port_range_min: 8080
+          port_range_max: 8080
+      rules:
+        - protocol: tcp
+          remote_ip_prefix: 0.0.0.0/0
+          port_range_min: 1337
+          port_range_max: 1337
+      rules:
+        - protocol: tcp
+          remote_ip_prefix: 0.0.0.0/0
+          port_range_min: 9443
+          port_range_max: 9443
+      rules:
+        - protocol: tcp
+          remote_ip_prefix: 0.0.0.0/0
+          port_range_min: 22
+          port_range_max: 22
+      rules:
+        - protocol: tcp
+          remote_ip_prefix: 0.0.0.0/0
+          port_range_min: 9763
+          port_range_max: 9763
+
+  instance_port:
+    type: OS::Neutron::Port
+    properties:
+      network: default
+      security_groups:
+        - default
+        - { get_resource: toscaContainer_secgroup }
+      fixed_ips:
+        - subnet_id: "default-subnet"
+
+  floating_ip:
+    type: OS::Neutron::FloatingIP
+    properties:
+      floating_network: float
+
+  association:
+    type: OS::Neutron::FloatingIPAssociation
+    properties:
+      floatingip_id: { get_resource: floating_ip }
+      port_id: { get_resource: instance_port }
+
+  openToscaContainerInstance:
+    type: OS::Nova::Server
+    properties:
+      key_name: { get_param: key_name }
+      image: ubuntu-14.04-trusty-server-cloudimg
+      flavor: { get_param: flavor }
+      networks:
+        - port: { get_resource: instance_port }
+      user_data: |
+        #!/bin/sh
+        TAG="v1.2-alpha"
+        export SCRIPTPATH="https://raw.githubusercontent.com/OpenTOSCA/OpenTOSCA.github.io/$TAG"
+        export BINPATH="https://github.com/OpenTOSCA/OpenTOSCA.github.io/releases/download/$TAG"
+        echo "\n\n### AUTOMATICALLY INSTALLING OpenTOSCA"
+        echo "\n\n### Update Package List"
+        sudo apt-get -y update;
+        echo "\n\n### Install Java 7"
+        sudo apt-get -y install openjdk-7-jdk
+        echo "\n\n### Set JAVA_HOME"
+        sudo sh -c "echo '127.0.0.1' $(hostname) >> /etc/hosts";
+        sudo sh -c "echo 'JAVA_HOME=\"'$(readlink -f /usr/bin/java | sed "s:bin/java::")'\"' >> /etc/environment";
+        export JAVA_HOME="$(readlink -f /usr/bin/java | sed "s:bin/java::")";
+        echo "\n\n### Check Java Version"
+        javaversion=`$JAVA_HOME/bin/java -version 2>&1 | grep "1.[7|8]"`
+        if [ "$javaversion" = "" ]; then
+        echo " \n\n\n\n########################################################\n"
+        echo " PLEASE MAKE SURE THAT JAVA 1.7 or higher is installed!!!"
+        echo " \n########################################################\n\n\n\n"
+        fi
+        echo "\n\n### Install Tomcat"
+        sudo apt-get -y install tomcat7 tomcat7-admin unzip;
+        sudo service tomcat7 stop;
+        echo "\n\n### Set CATALINA_OPTS"
+        sudo sh -c "echo 'CATALINA_OPTS=\"-Xms512m -Xmx1024m\"' >> /etc/default/tomcat7";
+        echo "\n\n### Tomcat User Settings"
+        cd /home/ubuntu;
+        wget $SCRIPTPATH/third-party/tomcat-users.xml;
+        sudo mv ./tomcat-users.xml /var/lib/tomcat7/conf/tomcat-users.xml;
+        echo "\n\n### Install ROOT.war"
+        wget $BINPATH/ROOT.war;
+        sudo rm /var/lib/tomcat7/webapps/ROOT -fr;
+        sudo mv ./ROOT.war /var/lib/tomcat7/webapps/ROOT.war;
+        echo "\n\n### Install admin.war"
+        wget $BINPATH/admin.war;
+        sudo mv ./admin.war /var/lib/tomcat7/webapps/admin.war;
+        echo "\n\n### Install vinothek.war"
+        wget $BINPATH/vinothek.war;
+        sudo mv ./vinothek.war /var/lib/tomcat7/webapps/vinothek.war;
+        echo "\n\n### Install Winery"
+        wget $SCRIPTPATH/third-party/winery.war
+        wget $SCRIPTPATH/third-party/winery-topologymodeler.war
+        sudo mv ./winery.war /var/lib/tomcat7/webapps/winery.war;
+        sudo mv ./winery-topologymodeler.war /var/lib/tomcat7/webapps/;
+        echo "\n\n### Import Winery Repository (into home)"
+        sudo mkdir /usr/share/tomcat7/winery-repository;
+        wget $SCRIPTPATH/third-party/winery-repository.zip;
+        sudo unzip -qo winery-repository.zip -d /usr/share/tomcat7/winery-repository;
+        sudo chown -R tomcat7:tomcat7 /usr/share/tomcat7/winery-repository;
+        echo "\n\n### Start Tomcat"
+        sudo service tomcat7 start;
+        echo "\n\n### Install WSO2 BPS"
+        cd /home/ubuntu;
+        # Due to the file size limitation of GitHub (100MB)
+        wget http://www.iaas.uni-stuttgart.de/OpenTOSCA/third-party/wso2bps-2.1.2.zip;
+        unzip -qo wso2bps-2.1.2.zip;
+        mv wso2bps-2.1.2/ wso2bps/
+        chmod +x wso2bps/bin/wso2server.sh;
+        echo "\n\n### REST Extension"
+        cd /home/ubuntu;
+        wget $SCRIPTPATH/third-party/bpel4restlight1.1.jar;
+        mv bpel4restlight1.1.jar wso2bps/repository/components/lib/;
+        echo "\n\n### Configure REST Extension"
+        cd /home/ubuntu;
+        wget $SCRIPTPATH/third-party/bps.xml;
+        mv bps.xml wso2bps/repository/conf/bps.xml;
+        echo "\n\n### Install OpenTOSCA"
+        cd /home/ubuntu;
+        wget $BINPATH/OpenTOSCA.zip;
+        unzip -qo OpenTOSCA.zip;
+        chmod +x OpenTOSCA/startup.sh;
+        echo "\n\n### Starting OpenTOSCA"
+        cd /home/ubuntu;
+        export JAVA_HOME="$(readlink -f /usr/bin/java | sed "s:bin/java::")";
+        echo "Starting WSO2 BPS...";
+        nohup ./wso2bps/bin/wso2server.sh >>/home/ubuntu/OpenTOSCA/nohup.log 2>&1 &
+        sleep 30;
+        cd OpenTOSCA;
+        echo "Starting OpenTOSCA container...";
+        nohup ./startup.sh >>/home/ubuntu/OpenTOSCA/nohup.log 2>&1 &
+        sleep 30;
+        echo "Startup will be finished in background...";
+        echo " + Run 'tail /home/ubuntu/OpenTOSCA/nohup.log -f' to see what's happening";
+        echo " + Wait a minute";
+        echo " + Open 'http://<HOST>:8080' in your browser to access the OpenTOSCA ecosystem";
