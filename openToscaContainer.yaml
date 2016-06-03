@@ -99,28 +99,22 @@ resources:
         echo "\n\n### Install Tomcat"
         sudo apt-get -y install tomcat7 tomcat7-admin unzip;
         sudo service tomcat7 stop;
-        echo "\n\n### Set CATALINA_OPTS"
         sudo sh -c "echo 'CATALINA_OPTS=\"-Xms512m -Xmx1024m\"' >> /etc/default/tomcat7";
-        echo "\n\n### Tomcat User Settings"
+        sudo sed -i 's!redirectPort="8443"!maxSwallowSize="-1" redirectPort="8443"!g' /var/lib/tomcat7/conf/server.xml
         cd /home/ubuntu;
         wget $SCRIPTPATH/third-party/tomcat-users.xml;
         sudo mv ./tomcat-users.xml /var/lib/tomcat7/conf/tomcat-users.xml;
-        echo "\n\n### Install ROOT.war"
         wget $BINPATH/ROOT.war;
         sudo rm /var/lib/tomcat7/webapps/ROOT -fr;
         sudo mv ./ROOT.war /var/lib/tomcat7/webapps/ROOT.war;
-        echo "\n\n### Install admin.war"
         wget $BINPATH/admin.war;
         sudo mv ./admin.war /var/lib/tomcat7/webapps/admin.war;
-        echo "\n\n### Install vinothek.war"
         wget $BINPATH/vinothek.war;
         sudo mv ./vinothek.war /var/lib/tomcat7/webapps/vinothek.war;
-        echo "\n\n### Install Winery"
         wget $SCRIPTPATH/third-party/winery.war
         wget $SCRIPTPATH/third-party/winery-topologymodeler.war
         sudo mv ./winery.war /var/lib/tomcat7/webapps/winery.war;
         sudo mv ./winery-topologymodeler.war /var/lib/tomcat7/webapps/;
-        echo "\n\n### Import Winery Repository (into home)"
         sudo mkdir /usr/share/tomcat7/winery-repository;
         wget $SCRIPTPATH/third-party/winery-repository.zip;
         sudo unzip -qo winery-repository.zip -d /usr/share/tomcat7/winery-repository;
