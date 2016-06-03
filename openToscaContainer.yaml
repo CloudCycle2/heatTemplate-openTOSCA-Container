@@ -13,6 +13,11 @@ parameters:
     default: m1.small
     description: Type of instance (flavor) to be used
 
+outputs:
+  instance_ip:
+    description: The IP address of the container VM
+    value: { get_attr: [floating_ip, floating_ip_address] }
+
 resources:
   toscaContainer_secgroup:
     type: OS::Neutron::SecurityGroup
@@ -50,8 +55,6 @@ resources:
       security_groups:
         - default
         - { get_resource: toscaContainer_secgroup }
-      fixed_ips:
-        - subnet_id: "default-subnet"
 
   floating_ip:
     type: OS::Neutron::FloatingIP
@@ -158,3 +161,6 @@ resources:
         echo " + Run 'tail /home/ubuntu/OpenTOSCA/nohup.log -f' to see what's happening";
         echo " + Wait a minute";
         echo " + Open 'http://<HOST>:8080' in your browser to access the OpenTOSCA ecosystem";
+        
+        
+
